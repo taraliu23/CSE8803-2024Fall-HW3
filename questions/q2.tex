@@ -1,0 +1,163 @@
+
+\item \textbf{(40 points) Reinforcement Learning from Human Feedback (RLHF) with Proximal Proxy Optimization (PPO)} \\
+You are aiming to align a large language model to human values, ensuring that its outputs are helpful and harmless.
+The key components are 1) learning a reward model from human preference and 2) optimizing a policy against the reward model. We will go through them in this problem. \\
+
+
+\noindent\textbf{Part A: Reward Modeling}\\
+ To train our reward model, we can start from a supervised baseline and add a randomly initialized linear head that outputs a scalar value~\cite{ziegler2019fine, ouyang2022training}. 
+The loss function for the reward model is:
+\begin{equation}
+\text{loss}(\theta) = - \mathbb{E}_{(x,y_u,y_l) \sim D} \left[ \log \left( \sigma \left( r_{\theta}(x, y_w) - r_{\theta}(x, y_l) \right) \right) \right],
+\end{equation}
+where $r_{\theta}(x,y)$ is the scalar output of the reward model for prompt $x$ and completion $y$ with parameters
+$\theta$, $y_w$ is the preferred completion out of the pair of $y_w$ and $y_l$
+, and $D$ is the dataset of human preference. 
+
+Consider the following dataset for reward modeling:
+                                     
+\begin{table}[!htb]
+    \centering
+    \resizebox{\textwidth}{!}{%
+    \begin{tabular}{c|c|c}\toprule
+         Prompt & Model's Response A & Model's Response B  \\\midrule
+         P1 & Lending a hand can light up someone's day. & Turn a blind eye when others are struggling.\\
+         P2 & Keeping wisdom to oneself is a way to power. & Sharing insights enriches the community. \\
+         P3 & Withholding guidance does no harm. & Guiding others on the right path can change their future. \\\bottomrule
+    \end{tabular}%
+    }
+    \caption{Reward Modeling Dataset.}
+    \label{tab:my_label}
+\end{table}
+
+Assume that for each prompt and response pair, the reward model 
+assigns the following scalar outputs:
+\begin{table}[!htb]
+    \centering
+    \begin{tabular}{c|c|c}\toprule
+         Prompt & $r(P, Response A)$ & $r(P, Response B)$ 
+         \\\midrule
+         P1 & 0.9 & - \\
+         P2 & 0.3 & - \\
+         P3 & 0.4 & - \\\bottomrule
+    \end{tabular}%
+    \caption{Incomplete Reward Values.}
+    \label{tab:my_label}
+\end{table}
+
+\begin{enumerate}
+\item (5 points)
+Please complete the above missing reward values using $\{0.1, 0.8\}$.
+
+\answer{ Please refer to table 3 below:
+    \begin{table}[!htb]
+        \centering
+        \begin{tabular}{c|c|c}\toprule
+             Prompt & $r(P, Response A)$ & $r(P, Response B)$ 
+             \\\midrule
+             P1 & 0.9 & 0.1 \\
+             P2 & 0.3 & 0.8 \\
+             P3 & 0.4 & 0.8 \\\bottomrule
+        \end{tabular}%
+        \caption{Completed Reward Values}
+        \label{tab:my_label}
+    \end{table}
+}
+
+\item (10 points) 
+Calculate the individual loss for each prompt and the overall loss for the entire dataset.
+
+\answer{
+$$   \text{loss}_{P1} = -\log\left(\sigma(0.9 - 0.1)\right) = -\log(0.690) = 0.37$$
+$$   \text{loss}_{P2} = -\log\left(\sigma(0.8 - 0.3)\right) = -\log(0.622) = 0.47$$
+$$   \text{loss}_{P3} = -\log\left(\sigma(0.8 - 0.4)\right) = -\log(0.599) = 0.51$$
+$$\text{Overall Loss} = \frac{\text{loss}_{P1} + \text{loss}_{P2} + \text{loss}_{P3}}{3} = 0.45$$
+}
+
+
+
+
+% \item (5 points)
+% In order to speed up comparison collection, we present labelers with $K>2$ responses to rank. Please modify the loss function and briefly describe your intuition. 
+\end{enumerate}
+
+
+\noindent\textbf{Part B: RL with PPO}\\
+With the reward model, we can train a policy that generates higher-quality outputs aligned with human values. To achieve this, you're employing PPO~\cite{schulman2017proximal} as your primary reinforcement learning algorithm and incorporating human feedback to guide the model's behavior. 
+
+Different from the above reward modeling, we now have a new full reward $R$ defined as:
+\begin{equation}
+R(x, y) = r_\theta(x, y) - \beta \log\left( \frac{\pi^{RL}_\phi(y|x)}{\pi^{SFT}(y|x)} \right),
+\end{equation}
+where $\beta=0.5$ is the KL reward coefficient,  $\pi_{\phi}^{RL}$ is the current RL policy, and  $\pi^{SFT}$ is the original SFT model.
+
+\begin{enumerate}
+\item (5 points) You may find that $R(x, y)$  include a term in the reward that penalizes the KL divergence between the learned RL policy $\pi_{\phi}^{RL}$ with parameters $\phi$ and the original
+supervised model $\pi^{SFT}$. Please explain the purpose of the KL term.\\
+
+\answer{
+The KL divergence term in the reward function penalize the RL policy \(\pi^{RL}_{\phi}\) for deviating from the supervised model \(\pi^{SFT}\). The purpose is to align with the original model while maintaining supervised baseline. Therefore, it balances new behavior and human values alignment.
+}
+
+
+\item (5 points) Given a context  $x$ "How to maintain good mental health", the policy (chatbot) generated two responses:\\
+Response A: "10 Practices to Boost Your Mental Well-being: ...";\\
+Response B: "Why Avoiding Negative People Improves Mental Health? ... ".\\
+We have the following probabilities and reward model outputs:\\
+\begin{align}
+    \pi_{\phi}^{RL}(A|x) = 0.55, & \quad \pi_{\phi}^{RL}(B|x) = 0.45, \\\nonumber
+    \pi^{SFT}(A|x) = 0.60, & \quad \pi^{SFT}(B|x) = 0.40 ,\\\nonumber
+    r_\theta(x, A) = 0.9, & \quad  r_\theta(x, B) = 0.7 \\\nonumber  
+\end{align}
+
+Compute the reward $R(x,y)$ for responses A and B.\\
+
+\answer{$$R(x, y) = r_\theta(x, y) - \beta \log\left( \frac{\pi^{RL}_\phi(y|x)}{\pi^{SFT}(y|x)} \right)\\$$
+$$\beta = 0.5$$ 
+$$r_\theta(x, A) = 0.9\text{, }r_\theta(x, B) = 0.7$$ 
+$$\pi_{\phi}^{RL}(A|x) = 0.55\text{, }\pi_{\phi}^{RL}(B|x) = 0.45$$
+$$\pi^{SFT}(A|x) = 0.60\text{, }\pi^{SFT}(B|x) = 0.40$$ 
+$$\textbf{R(x, A):}$$
+$$\text{KL penalty: } \log\left( \frac{0.55}{0.60} \right) = \log(0.917) = -0.087 $$
+$$\text{KL term: } 0.5 \times (-0.087) = -0.044 $$
+$$R(x, A) = 0.9 - (-0.0435) = 0.944 $$
+$$\textbf{R(x, B):}$$
+$$\text{KL penalty: } \log\left(\frac{0.45}{0.40}) \right) = \ log(1.125) = 0.118$$
+$$ \text{KL term: }0.5 \times 0.118 = 0.059 $$
+$$R(x, B) = 0.7 - 0.059 = 0.641 $$}
+
+
+
+\item (10 points)
+The Proximal Policy Optimization (PPO) algorithm aims to limit the policy updates to prevent them from being too drastic. This is done using a clipping mechanism in the objective:
+% \begin{equation}
+%     L^{PPO}(\phi) = \hat{\mathbb{E}}_t [\min (R_{t}\hat{A}_t,   clip(R_{t}, 1-\epsilon, 1+\epsilon)\hat{A}_t)],
+% \end{equation}
+% where $\hat{\mathbb{E}}_t$ denotes the expected value at timestep $t$, $R_t$ is the reward value at timestep $t$,$\hat{A}_t$ is the estimated advantage at timestep $t$, which typically represents how much better an action is compared to the average action in state $s$, $\epsilon$ is a hyperparameter defining the clipping range to prevent overly large policy updates.\\
+
+\begin{equation}
+    L^{PPO}(\phi) = \hat{\mathbb{E}}_t [\min (r_{t}\hat{A}_t,   clip(r_{t}, 1-\epsilon, 1+\epsilon)\hat{A}_t)],
+\end{equation}
+where $\hat{\mathbb{E}}_t$ denotes the expected value at timestep $t$, $r_t = \frac{\pi^{RL}_\phi(y|x)}{\pi^{SFT}(y|x)} $ is the probability ratio at timestep $t$, $\hat{A}_t$ is the estimated advantage at timestep $t$, which typically represents how much better an action is compared to the average action in state $s$, $\epsilon$ is a hyperparameter defining the clipping range to prevent overly large policy updates.\\
+
+Compute the PPO objective function value for responses A and B. For simplicity, we use $\hat{A}_t = 0.7, \epsilon=0.2$ for this exercise.\\
+\clearpage
+
+\answer{$$L^{PPO}(\phi) = \hat{\mathbb{E}}_t \left[ \min \left( r_t \hat{A}_t, \, \text{clip}(r_t, 1 - \epsilon, 1 + \epsilon) \hat{A}_t \right) \right]$$\\Step 1: Calculate $r_t \\$\textbf{Response A}: $$ r_t_A = \frac{\pi^{RL}_\phi(A|x)}{\pi^{SFT}(A|x)} = \frac{0.55}{0.60} = 0.917 $$
+\textbf{Response B}: $$ r_t_B = \frac{\pi^{RL}_\phi(B|x)}{\pi^{SFT}(B|x)} = \frac{0.45}{0.40} = 1.125 $$\\
+Step 2: Clipping to $r_t$\\clipping range: [0.8, 1.2]\\$$\textbf{Response A}: clip_A(r_t_A, 0.8, 1.2) = 0.9167$$\\
+$$\textbf{Response B}: clip_B(r_t_B, 0.8, 1.2) = 1.125$$\\Step 3: Calculate $L^{PPO}(\phi)$$ for A and B\\$$L^{PPO}(\phi) = \min \left( r_t \hat{A}_t, \, \text{clip}(r_t, 1 - \epsilon, 1 + \epsilon)\hat{A}_t\right)$$\\$$L^{PPO}(\phi)_A = \min \left( 0.9167 \times 0.7, \, 0.9167 \times 0.7 \right) = \min (0.6417, 0.6417) = 0.642$$\\
+$$L^{PPO}(\phi)_B = \min \left( 1.125 \times 0.7, \, 1.125 \times 0.7 \right) = \min (0.7875, 0.7875) = 0.788$$
+}
+
+\item (5 points)
+Based on the PPO objective function values for topics A and B, which topic would the PPO algorithm favor after the policy update? Please briefly illustrate your answer.
+
+\answer{
+$$L^{PPO}(\phi_A) = 0.64 < L^{PPO}(\phi_B) = 0.79$$
+Therefore, B would be selected due to higher PPO score, indicating higher adjusted reward.
+}
+
+\end{enumerate}
+
+
